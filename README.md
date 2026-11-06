@@ -12,7 +12,7 @@
 | 类型 | 多人联机经营（Tycoon） |
 | 我的角色 | 独立开发：玩法设计、系统拆分、服务端 / 客户端逻辑、数据持久化 |
 | 技术栈 | Luau · Roblox Studio · DataStore · RemoteEvent / RemoteFunction · TweenService |
-| 代码规模 | **39 个脚本 · 约 7,800 行 Luau** |
+| 代码规模 | **40 个脚本 · 约 13,600 行 Luau** |
 
 ---
 
@@ -24,6 +24,7 @@ src/
 │   ├── Main.server.lua            主控：初始化、玩家生命周期
 │   ├── Data/
 │   │   ├── DataService.lua        数据统一读写（缓存 + 校验）
+│   │   ├── SessionLock.lua        会话锁：防止跨服并发写
 │   │   └── DefaultData.lua        新玩家默认数据
 │   ├── Services/                  业务模块（ModuleScript）
 │   │   ├── PlantService.lua       植物成长、土地分配、缩放对齐
@@ -53,7 +54,7 @@ src/
 
 ---
 
-## 三个设计取舍
+## 四个设计取舍
 
 ### 1. 植物缩放为什么不直接 `ScaleTo`
 
@@ -108,7 +109,36 @@ local difference = GetDayDifference(lastClaimDate, today)
 
 ---
 
-## 技术要点
+### 4. 数据层为什么要加会话锁
+
+**问题**：玩家从 A 服跳到 B 服时，A 服可能还在异步保存。B 服此时读到的可能是旧数据，而 A 服随后的保存又会覆盖 B 服的新进度。
+
+**方案**：在 DataStore 里存一个 `{ JobId, Time }` 作为锁。
+
+```lua
+-- 抢锁：检查 + 写入是原子的
+if heldByOther then
+    return nil          -- 返回 nil 取消写入 = 抢锁失败
+end
+return { Lock = { JobId = jobId, Time = now } }
+```
+
+四个机制缺一不可：
+
+| 机制 | 作用 | 少了会怎样 |
+|---|---|---|
+| 抢锁 | 加载前独占 | 两个服务器同时读写 |
+| 续期（20 秒） | 证明自己还活着 | 活着的服务器被误判死亡 |
+| 释放 | 离开时清锁 | 玩家跳服要白等 60 秒 |
+| 超时接管（60 秒） | 崩溃后允许别人接管 | 玩家再也进不来 |
+
+**最关键的一点**：`SavePlayer` 里也要校验锁。只在加载时抢锁、保存时直接写，锁就形同虚设——别的服务器已经接管，你的写入照样覆盖它。
+
+📄 `src/server/Data/SessionLock.lua`、`DataService.lua` → `SavePlayer`
+
+---
+
+## 其他技术点
 
 - **服务端权威**：经济、土地归属、槽位、成长全部服务端计算，客户端只发意图
 - **属性驱动**：成长值 / 高度 / 槽位数用 `Attribute` 同步，客户端监听变化刷新表现
