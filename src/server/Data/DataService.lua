@@ -12,6 +12,10 @@ local DefaultData = require(
 	script.Parent:WaitForChild("DefaultData")
 )
 
+local SessionLock = require(
+	script.Parent:WaitForChild("SessionLock")
+)
+
 --------------------------------------------------
 -- DataStore2 Combine
 --------------------------------------------------
@@ -89,6 +93,24 @@ function DataService:LoadPlayer(player)
 
 	if PlayerDataCache[player] then
 		return PlayerDataCache[player]
+	end
+
+	--------------------------------------------------
+	-- 会话锁
+	--
+	-- 同一玩家的数据同一时刻只允许一个服务器读写。
+	-- 玩家快速跳服时，旧服务器可能还没释放锁，
+	-- Acquire 内部会轮询等待，超时才失败。
+	--------------------------------------------------
+
+	if not SessionLock:Acquire(player) then
+
+		warn(
+			"[DataService] 无法获取会话锁，数据可能正在其他服务器使用："
+				.. player.Name
+		)
+
+		return nil
 	end
 
 	print(
@@ -534,6 +556,23 @@ function DataService:SavePlayer(player)
 	end
 
 	--------------------------------------------------
+	-- 会话锁校验
+	--
+	-- 只持锁的服务器才允许写。少了这一步，锁就形同虚设：
+	-- 别的服务器可能已经接管，你的写入照样会覆盖它。
+	--------------------------------------------------
+
+	if not SessionLock:IsHeld(player) then
+
+		warn(
+			"[DataService] 会话锁已失效，拒绝写入："
+				.. player.Name
+		)
+
+		return false
+	end
+
+	--------------------------------------------------
 	-- 更新最后离开时间
 	--------------------------------------------------
 
@@ -629,6 +668,15 @@ end
 function DataService:RemovePlayer(player)
 
 	PlayerDataCache[player] = nil
+
+	--------------------------------------------------
+	-- 释放会话锁
+	--
+	-- 必须在保存完成之后再释放，
+	-- 否则别的服务器会立刻接管并读到旧数据。
+	--------------------------------------------------
+
+	SessionLock:Release(player)
 
 end
 
