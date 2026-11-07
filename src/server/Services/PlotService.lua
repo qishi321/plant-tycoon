@@ -244,34 +244,40 @@ end
 -- 获取所有土地 
 -------------------------------------------------- 
 
-local function GetPlots() 
+local CollectionService = game:GetService("CollectionService")
 
-	local plots = {} 
+local PlotList = {}
 
-	for i = 1, 6 do 
+local function ValidatePlot(plot)
+	assert(plot:IsA("Model"), "Plot 必须是 Model: " .. plot:GetFullName())
+	assert(plot:FindFirstChild("button"), "缺少 button: " .. plot:GetFullName())
+	assert(plot:FindFirstChild("PlantArea"), "缺少 PlantArea: " .. plot:GetFullName())
+	return plot
+end
 
-		local plot = Map:FindFirstChild( 
-			tostring(i) 
-		) 
+local function InitPlots()
+	local list = {}
 
-		if plot then 
+	for _, plot in ipairs(CollectionService:GetTagged("Plot")) do
+		if plot:IsDescendantOf(workspace) then
+			table.insert(list, ValidatePlot(plot))
+		end
+	end
 
-			table.insert( 
-				plots, 
-				plot 
-			) 
+	-- 用属性而不是名字排序，改名不影响
+	table.sort(list, function(a, b)
+		return (a:GetAttribute("PlotIndex") or 0) < (b:GetAttribute("PlotIndex") or 0)
+	end)
 
-		else 
+	assert(#list > 0, "地图上没有标记为 Plot 的地块")
+	PlotList = list
+end
 
-			warn( 
-				"找不到土地：" .. i 
-			) 
+InitPlots()
 
-		end 
-	end 
-
-	return plots 
-end 
+local function GetPlots()
+	return PlotList -- 只读约定：调用方不得修改
+end
 
 
 -------------------------------------------------- 
