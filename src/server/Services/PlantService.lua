@@ -346,8 +346,67 @@ end
 
 
 --------------------------------------------------
--- 更新植物外观（缩放 + 底部对齐，保证只向上生长）
+-- 植物缩放：绕脚底 pivot 生长，模型整体不位移
 --------------------------------------------------
+
+-- 缓存放模块级；弱键表，植物销毁后自动回收
+local PivotParts = setmetatable({}, { __mode = "k" })
+
+local function GetPivotPart(plant)
+	local cached = PivotParts[plant]
+
+	if cached and cached.Parent then
+		return cached
+	end
+
+	-- 名字必须和 Studio 里的零件一致
+	local found = plant:FindFirstChild("pivot", true)
+
+	if found and found:IsA("BasePart") then
+		PivotParts[plant] = found
+		return found
+	end
+
+	return nil
+end
+
+
+local function ApplyScaleFromPivot(plant, scale)
+
+	local pivotPart = GetPivotPart(plant)
+	local primary = plant.PrimaryPart
+
+	--------------------------------------------------
+	-- 找不到 pivot：明确报警，不要静默退化
+	--------------------------------------------------
+	if not pivotPart then
+
+		warn(
+			"[PlantService] 植物缺少 pivot 定位零件："
+				.. plant:GetFullName()
+		)
+
+		plant:ScaleTo(scale)
+		return
+	end
+
+	--------------------------------------------------
+	-- 有 PrimaryPart 时 pivot 由它决定，先摘掉
+	--------------------------------------------------
+	if primary then
+		plant.PrimaryPart = nil
+	end
+
+	plant.WorldPivot = pivotPart.CFrame
+
+	-- 绕 pivot 缩放：pivot 点不动，无需任何补偿
+	plant:ScaleTo(scale)
+
+	if primary then
+		plant.PrimaryPart = primary
+	end
+end
+
 
 function PlantService:UpdatePlantVisual(plant, smooth)
 
@@ -360,108 +419,41 @@ function PlantService:UpdatePlantVisual(plant, smooth)
 	-- 高度 1 = 原始大小，高度 2 = 1.5 倍，高度 3 = 2 倍
 	local targetScale = 1 + (height - 1) * 0.5
 
-
 	--------------------------------------------------
-	-- 核心：封装缩放并且底部对齐的逻辑
-	--------------------------------------------------
-	local function ApplyScaleAndAlign(scale)
-
-		--------------------------------------------------
-		-- 1. 缩放前：记录底部位置
-		--------------------------------------------------
-		local beforeBottom
-		local beforeUp = plant.PrimaryPart 
-			and plant.PrimaryPart.CFrame.UpVector 
-			or Vector3.new(0, 1, 0)
-
-		local successBefore, beforeBoxCFrame, beforeBoxSize =
-			pcall(function()
-				return plant:GetBoundingBox()
-			end)
-
-		if successBefore and beforeBoxCFrame and beforeBoxSize then
-			beforeBottom =
-				beforeBoxCFrame.Position
-			- beforeUp * (beforeBoxSize.Y / 2)
-		end
-
-
-		--------------------------------------------------
-		-- 2. 执行缩放
-		--------------------------------------------------
-		plant:ScaleTo(scale)
-
-
-		--------------------------------------------------
-		-- 3. 缩放后：计算底部偏移，并推回原位
-		--------------------------------------------------
-		if beforeBottom then
-
-			local successAfter, afterBoxCFrame, afterBoxSize =
-				pcall(function()
-					return plant:GetBoundingBox()
-				end)
-
-			if successAfter and afterBoxCFrame and afterBoxSize then
-
-				local afterUp = plant.PrimaryPart
-					and plant.PrimaryPart.CFrame.UpVector
-					or beforeUp
-
-				local afterBottom =
-					afterBoxCFrame.Position
-				- afterUp * (afterBoxSize.Y / 2)
-
-				local moveOffset =
-					beforeBottom - afterBottom
-
-				-- 如果底部有偏移，就把植物整体往上推
-				if moveOffset.Magnitude > 0.0001 then
-
-					plant:PivotTo(
-						plant:GetPivot()
-							+ moveOffset
-					)
-
-				end
-
-			end
-
-		end
-
-	end
-
-
-	--------------------------------------------------
-	-- 不需要渐变时直接设置
+	-- 创建 / 读档：直接到位，不播动画
 	--------------------------------------------------
 	if not smooth then
-		ApplyScaleAndAlign(targetScale)
+		ApplyScaleFromPivot(plant, targetScale)
 		return
 	end
 
-
-	--------------------------------------------------
-	-- 渐变生长（平滑向上生长）
-	--------------------------------------------------
 	local startScale = plant:GetScale()
 
-	local duration = 10
+	--------------------------------------------------
+	-- 已经在目标值附近，不跑空循环
+	--------------------------------------------------
+	if math.abs(targetScale - startScale) < 0.001 then
+		return
+	end
+
+	local duration = 1.5
 	local startTime = os.clock()
 
 	while plant.Parent do
 
-		local elapsed = os.clock() - startTime
-		local alpha = math.clamp(elapsed / duration, 0, 1)
+		local alpha = math.clamp(
+			(os.clock() - startTime) / duration,
+			0,
+			1
+		)
 
-		-- SmoothStep，让生长开始和结束都比较平滑
+		-- SmoothStep
 		alpha = alpha * alpha * (3 - 2 * alpha)
 
-		local currentScale =
+		ApplyScaleFromPivot(
+			plant,
 			startScale + (targetScale - startScale) * alpha
-
-		-- 调用封装好的缩放+对齐逻辑
-		ApplyScaleAndAlign(currentScale)
+		)
 
 		if alpha >= 1 then
 			break
@@ -469,7 +461,6 @@ function PlantService:UpdatePlantVisual(plant, smooth)
 
 		task.wait()
 	end
-
 end
 
 
