@@ -56,22 +56,34 @@ src/
 
 ## 四个设计取舍
 
-### 1. 植物缩放为什么不直接 `ScaleTo`
+### 1. 植物缩放：从包围盒补偿到绕脚底 pivot
 
 **问题**：`Model:ScaleTo()` 以 **Pivot（模型中心）** 为基准缩放。植物从 1 倍长到 1.5 倍时，底部会向下沉进土里。
 
-**方案**：缩放前后各取一次包围盒，算出底面位置差，再把模型整体推回去。
+**第一版方案（已弃用）**：缩放前后各取一次包围盒，算出底面偏移再推回去：
 
 ```lua
 local beforeBottom = boxCFrame.Position - up * (boxSize.Y / 2)
 plant:ScaleTo(targetScale)
-local moveOffset = beforeBottom - afterBottom
-plant:PivotTo(plant:GetPivot() + moveOffset)
+plant:PivotTo(plant:GetPivot() + (beforeBottom - afterBottom))
 ```
 
-**为什么用包围盒而不是 `PrimaryPart.Size`**：主部件可能只是树干，果实和枝叶才是真正的轮廓。
+能用，但**每帧要遍历两次所有零件**——10 秒的生长动画就是 1200 次 `GetBoundingBox`，零件多的植物会明显掉帧。
 
-📄 `src/server/Services/PlantService.lua` → `UpdatePlantVisual`
+**现方案**：给每株植物在**脚底**放一个名为 `pivot` 的定位零件，缩放前把 `WorldPivot` 移到它身上：
+
+```lua
+plant.PrimaryPart = nil          -- PrimaryPart 会覆盖 WorldPivot，先摘掉
+plant.WorldPivot = pivotPart.CFrame
+plant:ScaleTo(scale)             -- 绕脚底缩放，底部不动
+plant.PrimaryPart = primary      -- 还原
+```
+
+**收益**：缩放是 O(1)，不再每帧测包围盒；模型天然只向上长。
+
+**代价**：模型必须有 `pivot` 零件。缺失时**明确报警**而不是静默退化，避免美术改动模型后出现难查的穿模。
+
+📄 `src/server/Services/PlantService.lua` → `ApplyScaleFromPivot`
 
 ---
 
@@ -145,6 +157,8 @@ return { Lock = { JobId = jobId, Time = now } }
 - **数据集中**：`DataService` 统一管理存档，业务模块不直接读写 DataStore
 - **装饰物跟随缩放**：记录摆放时的植物缩放，植物长大后按比例还原
 - **模块化拆分**：数据 / 土地 / 植物 / 装饰物 / 果实各自独立，通过 ModuleScript 组合
+- **标签驱动**：土地用 `CollectionService` 标签识别，新增地图只需打标签，不用改代码
+- **防御式初始化**：土地加载时用 `assert` 校验模型结构（`button` / `PlantArea`），配置错立刻暴露
 
 ---
 
