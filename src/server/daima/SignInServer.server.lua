@@ -24,13 +24,8 @@ local function GetDateString(timestamp)
 
 	timestamp = timestamp or os.time()
 
-	local utcTime = os.date("!*t", timestamp)
-
-	local localTimestamp =
-		os.time(utcTime)
-		+ Config.TimeZoneOffset * 60 * 60
-
-	local date = os.date("!*t", localTimestamp)
+	local shifted = timestamp + Config.TimeZoneOffset * 3600
+	local date = os.date("!*t", shifted)
 
 	return string.format(
 		"%04d-%02d-%02d",
