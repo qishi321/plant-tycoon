@@ -16,6 +16,8 @@ local SessionLock = require(
 	script.Parent:WaitForChild("SessionLock")
 )
 
+
+
 --------------------------------------------------
 -- DataStore2 Combine
 --------------------------------------------------
@@ -41,6 +43,112 @@ local DataService = {}
 --------------------------------------------------
 
 local PlayerDataCache = {}
+
+--------------------------------------------------
+-- 运行期"生产收入"窗口
+--
+-- 只统计真实经营收入（果实出售）。
+-- 不写入存档：玩家离开即消失。
+-- 弱键表：key 是 Player，玩家销毁后条目可被回收。
+--------------------------------------------------
+
+local IncomeWindow =
+	setmetatable(
+		{},
+		{ __mode = "k" }
+	)
+
+
+--------------------------------------------------
+-- 增加"生产收入"
+--
+-- 这是唯一会把收入计入离线收益的入口。
+-- 签到 / 活动 / 补偿 请继续用 AddMoney。
+--------------------------------------------------
+
+function DataService:AddProductionIncome(
+	player,
+	amount
+)
+
+	if not player then
+		return false
+	end
+
+	local data =
+		PlayerDataCache[player]
+
+	if not data then
+		return false
+	end
+
+	--------------------------------------------------
+	-- 类型校验
+	--------------------------------------------------
+
+	if typeof(amount) ~= "number" then
+
+		warn(
+			"[DataService] 生产收入类型错误：",
+			tostring(amount)
+		)
+
+		return false
+	end
+
+	-- NaN 不等于自己
+	if amount ~= amount then
+
+		warn("[DataService] 生产收入为 NaN")
+
+		return false
+	end
+
+	if amount <= 0 then
+		return false
+	end
+
+	--------------------------------------------------
+	-- 累加到当前 10 秒窗口
+	--------------------------------------------------
+
+	IncomeWindow[player] =
+		(IncomeWindow[player] or 0)
+		+ amount
+
+	--------------------------------------------------
+	-- 加钱
+	--------------------------------------------------
+
+	return self:SetMoney(
+		player,
+		(data.Money or 0) + amount
+	)
+end
+
+
+--------------------------------------------------
+-- 取走并清零"生产收入"窗口
+--
+-- 只应由 10 秒采样器调用。
+-- 读和清零在同一次调用里完成，避免中间 yield。
+--------------------------------------------------
+
+function DataService:TakeProductionIncome(
+	player
+)
+
+	if not player then
+		return 0
+	end
+
+	local value =
+		IncomeWindow[player] or 0
+
+	IncomeWindow[player] = 0
+
+	return value
+end
 
 --------------------------------------------------
 -- 深度复制
@@ -364,18 +472,6 @@ function DataService:AddMoney(player, amount)
 	end
 
 	--------------------------------------------------
-	-- 记录实际获得的金币
-	--------------------------------------------------
-
-	if amount > 0 then
-
-		data._Current10SecIncome =
-			(data._Current10SecIncome or 0)
-			+ amount
-
-	end
-
-	--------------------------------------------------
 	-- 修改金币
 	--------------------------------------------------
 
@@ -670,6 +766,8 @@ function DataService:RemovePlayer(player)
 	-- 必须在保存完成之后再释放，
 	-- 否则别的服务器会立刻接管并读到旧数据。
 	--------------------------------------------------
+	IncomeWindow[player] = nil
+	
 	SessionLock:Release(player)
 
 end

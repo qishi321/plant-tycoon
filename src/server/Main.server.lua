@@ -135,19 +135,18 @@ local function StartOfflineIncomeTracker(player)
 				continue
 			end
 
-			local income = data._Current10SecIncome or 0
+			local income = DataService:TakeProductionIncome(player)
 
 			-- 只有这10秒确实有收入，才更新离线收益标准
 			if income > 0 then
-				data.OfflineIncomePer10Sec = income
-				print("[离线收益] " .. player.Name .. " 最近10秒收益：" .. income)
-			else
-				print("[离线收益] " .. player.Name .. " 最近10秒没有收益，保持原标准")
+				local data = DataService:GetData(player)
+				if data then
+					data.OfflineIncomePer10Sec = income
+					print("[离线收益] " .. player.Name .. " 最近10秒收益：" .. income)
+				end
 			end
 
-			data._Current10SecIncome = 0
-
-		end
+		end 
 
 	end)
 
