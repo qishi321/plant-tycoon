@@ -432,7 +432,7 @@ local function GetNewGooseScaleMultiplier(player, plant, currentPlantScale)
 		end
 	end
 
-	return 1
+	return currentPlantScale
 end
 
 --------------------------------------------------
@@ -486,21 +486,30 @@ local function SetupGooseClickDetector(ownerPlayer, gooseObject)
 	hitbox.CanQuery = true
 	hitbox.Transparency = 1
 
-	local clickDetector =
+	--------------------------------------------------
+	-- 先清掉旧的（可能来自模板或被复制过）
+	-- 重建比"打标记复用"可靠：
+	-- 旧检测器上的 MouseClick 连接会随实例一起销毁
+	--------------------------------------------------
+
+	local oldDetector =
 		hitbox:FindFirstChild("GooseClickDetector")
 
-	if not clickDetector then
-		clickDetector = Instance.new("ClickDetector")
-		clickDetector.Name = "GooseClickDetector"
-		clickDetector.MaxActivationDistance = 100
-		clickDetector.Parent = hitbox
+	if oldDetector then
+		oldDetector:Destroy()
 	end
 
-	if clickDetector:GetAttribute("ServerConnected") == true then
-		return
-	end
+	local clickDetector =
+		Instance.new("ClickDetector")
 
-	clickDetector:SetAttribute("ServerConnected", true)
+	clickDetector.Name =
+		"GooseClickDetector"
+
+	clickDetector.MaxActivationDistance =
+		1000
+
+	clickDetector.Parent =
+		hitbox
 
 	--------------------------------------------------
 	-- 左键：进入编辑模式
@@ -1278,6 +1287,36 @@ PlaceGoose.OnServerEvent:Connect(function(
 		player,
 		gooseObject
 	)
+
+	--------------------------------------------------
+	-- 放置后自检：没有 ClickDetector 立刻报警
+	-- 以后"点了没反应"能在 Output 里直接看到
+	--------------------------------------------------
+	task.defer(function()
+
+		if not gooseObject.Parent then
+			return
+		end
+
+		local hitbox =
+			GetGooseHitbox(gooseObject)
+
+		local detector =
+			hitbox
+			and hitbox:FindFirstChildOfClass("ClickDetector")
+
+		if not detector then
+
+			warn(
+				"[GooseServer] 放置后没有 ClickDetector：",
+				gooseObject:GetFullName(),
+				"| 有 Hitbox：",
+				hitbox and "是" or "否"
+			)
+
+		end
+
+	end)
 
 	if isEditing then
 		for _, oldGoose in ipairs(plot:GetChildren()) do
