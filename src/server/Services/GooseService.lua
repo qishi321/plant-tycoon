@@ -31,7 +31,7 @@ local GooseModels =
 -- 配置
 --------------------------------------------------
 
-local LEFT_VISUAL_OFFSET = 2
+local LEFT_VISUAL_OFFSET = -3
 local GAP = 0.05
 
 --------------------------------------------------

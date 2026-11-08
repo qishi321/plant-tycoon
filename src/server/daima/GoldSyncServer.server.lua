@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
--- 👇 改成你项目里 DataService 的实际路径
+--DataService 的实际路径
 local DataService = require(game.ServerScriptService.Data:WaitForChild("DataService"))
 
 -- 获取/创建 RemoteEvent
