@@ -295,6 +295,12 @@ function FruitService:SpawnFruit(player, plant)
 	--------------------------------------------------
 
 	fruit.Parent = plant
+	
+	task.delay(45, function()
+		if fruit and fruit.Parent then
+			fruit:Destroy()
+		end
+	end)
 
 	--------------------------------------------------
 	-- 一开始固定在 1
@@ -369,6 +375,12 @@ function FruitService:SpawnFruit(player, plant)
 	--------------------------------------------------
 
 	DropFruit(fruit)
+	
+	task.delay(30, function()
+		if fruit and fruit.Parent then
+			fruit:Destroy()
+		end
+	end)
 
 	return fruit
 end
