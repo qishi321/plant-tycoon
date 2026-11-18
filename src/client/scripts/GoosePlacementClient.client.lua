@@ -1279,48 +1279,7 @@ ConfirmPlacement = function()
 	RemovePreview()
 end
 
---------------------------------------------------
--- 判断鹅化物背包当前是否打开
---------------------------------------------------
 
-local function IsGooseBackpackOpen()
-
-	local playerGui =
-		player:FindFirstChild("PlayerGui")
-
-	if not playerGui then
-		return false
-	end
-
-	local gui =
-		playerGui:FindFirstChild(
-			"GooseSlotGui"
-		)
-
-	if not gui then
-		return false
-	end
-
-	if gui:IsA("ScreenGui")
-		and gui.Enabled == false then
-
-		return false
-	end
-
-	local backpack =
-		gui:FindFirstChild(
-			"beibao",
-			true
-		)
-
-	if backpack
-		and backpack:IsA("GuiObject") then
-
-		return backpack.Visible
-	end
-
-	return true
-end
 
 --------------------------------------------------
 -- 已放置鹅化物交互
@@ -1345,10 +1304,6 @@ GooseInteraction.OnClientEvent:Connect(
 		--------------------------------------------------
 
 		if action == "EditRequest" then
-
-			if not IsGooseBackpackOpen() then
-				return
-			end
 
 			if placing then
 				return
@@ -1388,6 +1343,27 @@ GooseInteraction.OnClientEvent:Connect(
 				itemId
 			)
 
+			--------------------------------------------------
+			-- 兜底：3 秒没收到 EditReady 就清掉
+			-- 防止服务器拒绝时 pending 永久挂着
+			--------------------------------------------------
+
+			task.delay(3, function()
+
+				if editReadyPending
+					and editReadyPending.ItemId == itemId then
+
+					warn(
+						"[Edit] BeginEdit 超时：",
+						itemId
+					)
+
+					editReadyPending = nil
+
+				end
+
+			end)
+
 			return
 		end
 
@@ -1403,23 +1379,6 @@ GooseInteraction.OnClientEvent:Connect(
 
 			if editReadyPending.ItemId
 				~= itemId then
-
-				return
-			end
-
-			--------------------------------------------------
-			-- 如果玩家在服务器回应之前关闭了背包
-			--------------------------------------------------
-
-			if not IsGooseBackpackOpen() then
-
-				GooseInteraction:FireServer(
-					"CancelEdit",
-					itemId
-				)
-
-				editReadyPending =
-					nil
 
 				return
 			end
@@ -1452,10 +1411,6 @@ GooseInteraction.OnClientEvent:Connect(
 		--------------------------------------------------
 
 		if action == "RecycleRequest" then
-
-			if not IsGooseBackpackOpen() then
-				return
-			end
 
 			if placing then
 				return
